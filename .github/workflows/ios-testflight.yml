@@ -1,0 +1,94 @@
+# Builds the iOS app on a free GitHub-hosted Mac and uploads it to TestFlight.
+# Run it from the Actions tab ("Run workflow"), or push a tag like v1.0.1.
+#
+# Needs three repository secrets (Settings > Secrets and variables > Actions):
+#   ASC_KEY_ID      App Store Connect API key ID        (e.g. 2X9R4HXF34)
+#   ASC_ISSUER_ID   App Store Connect issuer ID         (a UUID, shown above the keys list)
+#   ASC_KEY_P8      the full text of the AuthKey_XXXX.p8 file, including the BEGIN/END lines
+# The key needs the Admin role so Xcode can create the signing certificate and profile in the cloud.
+
+name: iOS build to TestFlight
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+env:
+  TEAM_ID: 2YULCL752Y
+
+jobs:
+  testflight:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Capacitor
+        run: npm install --no-save @capacitor/core @capacitor/cli @capacitor/ios @capacitor/assets
+
+      - name: Create the iOS project
+        run: |
+          npm run build
+          npx cap add ios
+          npx capacitor-assets generate --ios --iconBackgroundColor "#9fd6f2" --splashBackgroundColor "#f3eefc" --splashBackgroundColorDark "#2b2340"
+          npx cap sync ios
+          # no export-compliance question in TestFlight: the game uses no encryption
+          /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" ios/App/App/Info.plist
+
+      - name: Write the App Store Connect API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8"
+
+      - name: Archive
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          cd ios/App
+          # Capacitor 8+ uses Swift packages (App.xcodeproj); older versions use CocoaPods (App.xcworkspace)
+          if [ -d App.xcworkspace ]; then SRC="-workspace App.xcworkspace"; else SRC="-project App.xcodeproj"; fi
+          VERSION=$(node -p "require('../../package.json').version")
+          xcodebuild $SRC -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            archive
+
+      - name: Upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          EOF
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          echo "Uploaded build $GITHUB_RUN_NUMBER. It appears in App Store Connect > TestFlight after Apple finishes processing (about 10-30 minutes)."
+
+      - name: Remove the key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"
