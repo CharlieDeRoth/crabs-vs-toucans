@@ -52,7 +52,7 @@ Needs **Android Studio** (Windows is fine) and a Google Play developer account (
 
 ## 4. Before submitting for public release
 
-- **Host the privacy policy.** Upload `privacy.html` anywhere public (for example GitHub Pages or Netlify) and paste the link into both stores. Replace `[CONTACT EMAIL]` in it first.
+- **Privacy policy** is live at https://charliederoth.github.io/crabs-vs-toucans/privacy.html (GitHub Pages). Paste that link into both stores.
 - Fill in the store text, screenshots, age rating and privacy answers from `store/listing.md`.
 - Test on real phones: touch, sound (iPhone needs one tap before audio plays, which the game handles), saves after closing the app, and speed on an older phone.
 
