@@ -1,7 +1,7 @@
 // Pixelify Sans' capital "C" and "G" are boxes with tiny notches, so they read as "O" and "6" at small sizes.
-// This builds a tiny TrueType font per weight containing only redrawn, clearly open "C" and "G" glyphs (same
-// pixel grid, strokes and metrics as Pixelify Sans, measured in the browser), saves it to fonts/, and embeds
-// it in index.html as an extra @font-face for "Pixelify Sans" limited to those two letters.
+// This builds a tiny TrueType font per weight containing only redrawn, clearly open "C" and "G" glyphs and digits
+// (same pixel grid, strokes and metrics as Pixelify Sans, measured in the browser), saves it to fonts/, and embeds
+// it in index.html as an extra @font-face for "Pixelify Sans" limited to those characters.
 // Usage:  node tools/fix-glyphs.js
 const fs = require('fs');
 const path = require('path');
@@ -39,7 +39,34 @@ function gRects(g) {
     [Math.round((L + R) / 2), bar - Math.round(Math.min(sH, u * 1.1)), R, bar],   // crossbar
   ];
 }
-const GLYPHS = [{ code: 0x43, rects: cRects }, { code: 0x47, rects: gRects }];
+// Pixelify's digits are just as ambiguous (2 reads as 8, 5 as S, 3 as 9), which makes prices misleading, so they
+// are redrawn on the font's own 5x7 pixel grid. All share one advance width, so numbers don't jiggle as they change.
+const DIGITS = [
+  ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+  ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
+  ['####.', '....#', '....#', '.###.', '....#', '....#', '####.'],
+  ['#...#', '#...#', '#...#', '#####', '....#', '....#', '....#'],
+  ['#####', '#....', '#....', '####.', '....#', '....#', '####.'],
+  ['.###.', '#....', '#....', '####.', '#...#', '#...#', '.###.'],
+  ['#####', '....#', '...#.', '..#..', '..#..', '..#..', '..#..'],
+  ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'],
+  ['.###.', '#...#', '#...#', '.####', '....#', '....#', '.###.'],
+];
+// one rect per horizontal run, grown slightly past the grid to match the weight's stroke (overlaps are fine)
+function digitRects(rows) {
+  return g => {
+    const { L, R, B, T, sV, sH } = g, cw = (R - L) / 5, ch = (T - B) / 7, gx = Math.max(0, (sV - cw) / 2), gy = Math.max(0, (sH - ch) / 2), out = [];
+    rows.forEach((row, y) => {
+      for (const m of row.matchAll(/#+/g)) {
+        const x0 = L + m.index * cw, x1 = x0 + m[0].length * cw, y1 = T - y * ch, y0 = y1 - ch;
+        out.push([Math.round(Math.max(L, x0 - gx)), Math.round(Math.max(B, y0 - gy)), Math.round(Math.min(R, x1 + gx)), Math.round(Math.min(T, y1 + gy))]);
+      }
+    });
+    return out;
+  };
+}
+const GLYPHS = [...DIGITS.map((rows, i) => ({ code: 0x30 + i, rects: digitRects(rows) })), { code: 0x43, rects: cRects }, { code: 0x47, rects: gRects }];
 
 // ---------- minimal TrueType writer ----------
 const be = {
@@ -85,7 +112,7 @@ function buildFont(weight, g) {
     be.i16(0), Buffer.alloc(10), be.u32(1), be.u32(0), be.u32(0), be.u32(0), 'NONE', be.u16(bold ? 0x20 : 0x40), be.u16(first), be.u16(last),
     be.i16(ASC), be.i16(-DESC), be.i16(0), be.u16(ASC), be.u16(DESC), be.u32(1), be.u32(0), be.i16(480), be.i16(g.T), be.u16(0), be.u16(32), be.u16(0)]);
   const hmtx = cat([be.u16(500), be.i16(0), ...glyphs.flatMap(x => [be.u16(g.adv), be.i16(x.bb[0])])]);
-  // cmap format 4: one segment per letter, plus the 0xFFFF terminator
+  // cmap format 4: one segment per character, plus the 0xFFFF terminator
   const codes = [...GLYPHS.map(G => G.code), 0xFFFF], seg = codes.length;
   const es = Math.floor(Math.log2(seg)), sr = 2 * 2 ** es;
   const cmap4 = cat([be.u16(4), be.u16(16 + 8 * seg), be.u16(0), be.u16(seg * 2), be.u16(sr), be.u16(es), be.u16(seg * 2 - sr),
@@ -131,12 +158,12 @@ for (const [w, g] of Object.entries(WEIGHTS)) {
 const file = path.join(ROOT, 'index.html');
 let html = fs.readFileSync(file, 'utf8');
 // remove any earlier version of the block (including the old C-only one)
-for (const [s, e] of [['/* clearer capital C (tools/fix-c-glyph.js) */', '/* end clearer C */'], ['/* clearer capital C and G (tools/fix-glyphs.js) */', '/* end clearer letters */']]) {
+for (const [s, e] of [['/* clearer capital C (tools/fix-c-glyph.js) */', '/* end clearer C */'], ['/* clearer capital C and G (tools/fix-glyphs.js) */', '/* end clearer letters */'], ['/* clearer digits and capital C, G (tools/fix-glyphs.js) */', '/* end clearer glyphs */']]) {
   const i = html.indexOf(s);
   if (i >= 0) html = html.slice(0, i) + html.slice(html.indexOf(e) + e.length + 1);
 }
 html = html.replace(/@font-face\{font-family:"Pixelify Sans";src:url\(data:font\/woff2;base64,[^)]*\) format\("woff2"\);font-weight:400 700;font-display:swap\}\n/, '');
-const block = `/* clearer capital C and G (tools/fix-glyphs.js) */\n${css.join('\n')}\n/* end clearer letters */\n`;
+const block = `/* clearer digits and capital C, G (tools/fix-glyphs.js) */\n${css.join('\n')}\n/* end clearer glyphs */\n`;
 const anchor = html.indexOf('@font-face{font-family:"Press Start 2P"');
 html = html.slice(0, anchor) + block + html.slice(anchor);
 fs.writeFileSync(file, html);
