@@ -69,9 +69,11 @@ const SCENES = {
 };
 
 const MEASURE = `
+  updateUI(true);
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   fitLayout();
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await new Promise(r => setTimeout(r, 260));   // let a sliding drawer finish
+  const drawerClosed = document.body.classList.contains('drawer') && !document.body.classList.contains('drawer-open');
   const se = document.scrollingElement, vw = innerWidth, vh = innerHeight, issues = [];
   const box = el => { const r = el.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; };
   const onScreen = (el, name) => { if (!el || !el.offsetParent && getComputedStyle(el).position !== 'fixed') return; const b = box(el);
@@ -80,10 +82,10 @@ const MEASURE = `
   const menu = document.body.classList.contains('in-menu');
   onScreen(document.getElementById('stage'), 'stage');
   if (!menu) {
-    onScreen(document.getElementById('hud'), 'hud'); onScreen(document.getElementById('side'), 'side');
+    onScreen(document.getElementById('hud'), 'hud'); if (!drawerClosed) onScreen(document.getElementById('side'), 'side');
     for (const el of document.querySelectorAll('#hud > *')) if (el.offsetParent) onScreen(el, 'hud item');
     const side = document.getElementById('side');
-    for (const b of side.querySelectorAll('.box')) { const z = +(b.style.zoom || 1); const bb = box(b), sb = box(side);
+    if (!drawerClosed) for (const b of side.querySelectorAll('.box')) { if (!b.offsetParent) continue; const z = +(b.style.zoom || 1); const bb = box(b), sb = box(side);
       if (bb.b > sb.b + 2) issues.push('side box clipped by ' + Math.round(bb.b - sb.b) + 'px');
       if (z < 0.6) issues.push('side shrunk to ' + z.toFixed(2)); }
     const st = box(document.getElementById('stage'));
@@ -110,9 +112,10 @@ const MEASURE = `
     if (px < minText) { minText = px; minWhere = el.textContent.trim().slice(0, 20); } }
   if (minText < 9) issues.push('text too small: ' + minText.toFixed(1) + 'px "' + minWhere + '"');
   // wasted space: how much of the area under the HUD is neither game view nor panels
-  if (!menu) { const mr = box(document.getElementById('main')), st = box(document.getElementById('stage')), sd = box(document.getElementById('side'));
+  if (!menu && !document.body.classList.contains('drawer')) { const mr = box(document.getElementById('main')), st = box(document.getElementById('stage')), sd = box(document.getElementById('side'));
     const empty = 1 - (st.w * st.h + sd.w * sd.h) / (mr.w * mr.h); if (empty > 0.33) issues.push('wasted space ' + Math.round(empty * 100) + '%'); }
-  return { minText: +minText.toFixed(1), issues, hudH: Math.round(box(document.getElementById('hud')).h), modalZoom: +modalZoom.toFixed(2),
+  const sb = box(document.getElementById('stage'));
+  return { stage: Math.round(sb.w) + 'x' + Math.round(sb.h) + '@' + Math.round(sb.l) + ',' + Math.round(sb.t), minText: +minText.toFixed(1), issues, hudH: Math.round(box(document.getElementById('hud')).h), modalZoom: +modalZoom.toFixed(2),
            sideZoom: +(+(document.querySelector('#side .box')?.style.zoom || 1)).toFixed(2), menu };
 `;
 
@@ -147,11 +150,13 @@ async function main() {
         goldenUnlocked = true; PROG.isles = 6; PROG.city = 2; buildShop();
         window.toMenuForAudit = () => { newGame(); setMap('isles'); STATS.loginDay = dayKey(); STATS.tutorialDone = true; };`);
       console.log(`\n${dev.name} (${dev.w}x${dev.h})`);
+      let gameStage = null;   // the map must keep one size and position across every in-game screen on a device
       for (const [scene, js] of Object.entries(SCENES)) {
         total++;
         let res;
         try { await evaluate(`SETTINGS.bigText = false; applyA11y(); $('overlay').classList.add('hide'); document.body.classList.remove('in-menu'); ${js}`); res = await evaluate(MEASURE); }
         catch (e) { res = { issues: ['ERROR ' + e.message.split('\n')[0]] }; }
+        if (res.stage && !res.menu) { gameStage = gameStage || res.stage; if (res.stage !== gameStage) res.issues.push(`map moved: ${gameStage} -> ${res.stage}`); }
         const png = await send('Page.captureScreenshot', { format: 'png' });
         fs.writeFileSync(path.join(OUT, `${dev.name}--${scene}.png`), Buffer.from(png.result.data, 'base64'));
         const ok = !res.issues.length; if (!ok) fails++;

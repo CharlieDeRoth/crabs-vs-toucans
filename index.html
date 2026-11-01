@@ -317,6 +317,45 @@ body.stacked.has-sel .toshop{display:inline-block}
   #shop{gap:5px}
   #info{font-size:12px;line-height:1.35}
 }
+/* ---- touch + small screens: the map takes all the room, shop + upgrades slide over it from the side with the most spare space ---- */
+#drawerTab{display:none}
+body.drawer #main{position:relative;overflow:hidden;justify-content:center}
+body.drawer-side #main{justify-content:flex-start}
+body.drawer #side{position:absolute;z-index:6;left:0;right:0;bottom:0;width:auto;padding:0 5px 5px 0;transition:transform .2s ease-out;transform:translateY(calc(100% + 6px))}
+body.drawer-side #side{left:auto;top:0;transform:translateX(calc(100% + 6px))}
+body.drawer.flip #side{top:0;bottom:auto;transform:translateY(calc(-100% - 6px))}
+body.drawer-side.flip #side{left:0;right:auto;bottom:0;transform:translateX(calc(-100% - 6px))}
+body.drawer.drawer-open #side{transform:none}
+body.drawer.docked #side{bottom:auto;transition:none}
+body.drawer.has-sel #side .box:first-child{display:none}
+body.drawer.has-sel .toshop{display:inline-block}
+body.drawer #info>p.muted,body.drawer #info>.muted:last-child{display:none}
+body.drawer .card{font-size:12px}
+body.docked #shop{grid-template-columns:repeat(auto-fit,minmax(72px,1fr))}
+body.sheet-row #side{flex-direction:row}
+body.sheet-row #side .box{flex:1;min-width:0}
+body.sheet-row #side .box:first-child{flex:1.7}
+body.sheet-row #side h3{display:none}
+body.sheet-row #shop{grid-template-columns:repeat(8,minmax(0,1fr));gap:5px}
+body.sheet-row #side .box{padding:4px 6px}
+body.sheet-row #info{padding:6px 10px}
+body.sheet-row .card img{width:34px;height:34px;margin-bottom:1px}
+body.sheet-row .card{font-size:12px;padding:3px 1px}
+body.drawer #drawerTab{display:block;position:absolute;z-index:7;right:5px;bottom:5px;font-size:12px;padding:5px 9px;background:var(--gold);box-shadow:2px 2px 0 var(--edge);transition:transform .2s ease-out}
+body.drawer-side #drawerTab{top:0;bottom:auto}
+body.drawer-open:not(.flip) #drawerTab{transform:translateY(var(--drawer-h,0))}
+body.drawer-side.drawer-open:not(.flip) #drawerTab{transform:translateX(var(--drawer-w,0))}
+body.in-menu #drawerTab,body.docked #drawerTab{display:none!important}
+/* wide phones: the HUD becomes a rail beside the map so the map can use the full height */
+body.rail #wrap{flex-direction:row-reverse;gap:8px}
+body.rail #main{min-width:0}
+body.rail #hud{width:140px;margin:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-content:start;gap:6px}
+body.rail #hud button{padding:5px 2px;min-width:0}
+body.rail #hud .pill{justify-content:center;min-width:0}
+body.rail #hud .pill:nth-child(3),body.rail #btnStart,body.rail #btnMenu{grid-column:1 / 3}
+body.rail #where,body.rail #hearts,body.rail .spacer{display:none}
+@media (max-width:834px){ #where,#hearts,.spacer{display:none} }
+@media (max-width:480px){ #hud>*{flex:1 1 auto;justify-content:center} }
 </style>
 </head>
 <body>
@@ -344,6 +383,7 @@ body.stacked.has-sel .toshop{display:inline-block}
       <div class="box"><h3>CRAB SHOP</h3><div id="shop"></div></div>
       <div class="box" id="info"></div>
     </div>
+    <button id="drawerTab"></button>
   </div>
 </div>
 <script>
@@ -2516,7 +2556,43 @@ function updateUI(force) {
       <p class="muted">Space = start round. ${COIN_PER_KILL} coin per toucan + a round bonus.</p>`;
   }
   if (force || html !== lastInfo) { lastInfo = html; $('info').innerHTML = html; }
+  syncDrawer();
 }
+// ---------- slide-out shop/upgrades drawer (touch + small screens) ----------
+const DRAWER = matchMedia('(pointer: coarse), (max-width: 900px), (max-height: 560px)');
+let drawerOpen = true, drawerSpare = 0, drawerSel = null, drawerBusy = false, drawerRound = false, drawerMenu = true, drawerToShop = false;
+function setDrawer(open) { drawerOpen = open; document.body.classList.toggle('drawer-open', open); }
+const isSideDrawer = () => document.body.classList.contains('drawer-side');
+// true when the panel, with what it shows right now, is bigger than the spare space beside the map
+function drawerCovers() { const s = $('side'); return (isSideDrawer() ? s.offsetWidth : s.offsetHeight) > drawerSpare + 2; }
+function setDrawerFlip(flip) {   // jump to the other edge without animating across the map
+  const s = $('side'); s.style.transition = 'none'; document.body.classList.toggle('flip', flip); s.offsetWidth; s.style.transition = '';
+}
+// open on the far edge if the panel would otherwise hide the thing that was just tapped
+function drawerHides(p) {
+  const s = $('side'), m = $('main').getBoundingClientRect(), c = cv.getBoundingClientRect(), k = c.width / W, reach = 40;
+  return isSideDrawer() ? c.left + p.x * k + reach > m.right - s.offsetWidth : c.top + p.y * k + reach > m.bottom - s.offsetHeight;
+}
+function syncDrawer() {
+  const b = document.body;
+  if (b.classList.contains('in-menu')) { drawerMenu = true; return; }
+  if (!b.classList.contains('drawer')) return;
+  if (drawerMenu) { drawerMenu = false; setDrawer(true); }   // each match starts with the shop showing
+  const sel = S.selected || (S.selEnemy && !S.selEnemy.dead ? S.selEnemy : null), busy = !!(S.placing || S.aiming);
+  if (sel && sel !== drawerSel) { fitSide(); setDrawerFlip(drawerCovers() && drawerHides(sel)); setDrawer(true); }
+  else if (!sel && drawerSel) { setDrawerFlip(false); if (!drawerToShop && drawerCovers()) setDrawer(false); drawerToShop = false; }
+  if (busy && !drawerBusy && drawerCovers()) setDrawer(false);   // placing or aiming needs the whole map
+  else if (!busy && drawerBusy && !sel && !drawerCovers()) setDrawer(true);   // shop fits beside the map: bring it back
+  if (S.inRound && !drawerRound && drawerCovers()) setDrawer(false);   // clear the view when the toucans arrive
+  drawerSel = sel; drawerBusy = busy; drawerRound = S.inRound;
+  const side = isSideDrawer();
+  $('drawerTab').textContent = S.placing ? '✕ CANCEL' : drawerOpen ? (side ? '▶' : '▼') + ' HIDE' : (side ? '◀ ' : '▲ ') + (sel ? 'UPGRADES' : 'SHOP');
+}
+$('drawerTab').onclick = () => {
+  Sfx.play('click');
+  if (S.placing) { S.placing = null; S.pending = null; setDrawer(true); } else setDrawer(!drawerOpen);
+  updateUI(true);
+};
 $('info').addEventListener('pointerdown', ev => {
   const b = ev.target.closest('button'); if (!b || !S.selected) return;
   if (b.dataset.act === 'mode') S.selected.mode = (S.selected.mode + 1) % TARGET_MODES.length;
@@ -2524,7 +2600,7 @@ $('info').addEventListener('pointerdown', ev => {
   if (b.dataset.act === 'upA') upgradeTower(S.selected, 'A');
   if (b.dataset.act === 'upB') upgradeTower(S.selected, 'B');
   if (b.dataset.act === 'ability') triggerAbility(S.selected);
-  if (b.dataset.act === 'close') { S.selected = null; S.selEnemy = null; }
+  if (b.dataset.act === 'close') { S.selected = null; S.selEnemy = null; drawerToShop = b.classList.contains('toshop'); }
   if (b.dataset.act === 'sell') sellTower(S.selected);
   updateUI(true);
 });
@@ -2955,10 +3031,10 @@ function showOverlayInner(kind, arg) {
 let last = performance.now(), uiTick = 0;
 // ---------- guided tutorial: coach bubbles walk a new player through their first match ----------
 const TUTORIAL = [
-  { text: 'Toucans are flying for the border! Let\'s build a defence. <b>Tap the Glock Crab</b> in the shop.', target: () => document.querySelector('.card[data-t="glock"]'), done: () => S.placing || S.towers.length },
+  { text: 'Toucans are flying for the border! Let\'s build a defence. <b>Tap the Glock Crab</b> in the shop.', shop: true, target: () => document.querySelector('.card[data-t="glock"]'), done: () => S.placing || S.towers.length },
   { text: '<b>Tap the glowing spot</b> on the grass to place your crab. Crabs need to be close to the track.', target: 'spot', done: () => S.towers.length > 0 },
   { text: 'Nice! Now press <b>START</b> to send the first wave of toucans.', target: () => $('btnStart'), done: () => S.round > 0 },
-  { text: 'Your crab pops toucans by itself, and every pop earns a coin. <b>Place a second crab</b> while you wait!', target: () => document.querySelector('.card:not(.poor)'), done: () => S.towers.length > 1 || (!S.inRound && S.round > 0) },
+  { text: 'Your crab pops toucans by itself, and every pop earns a coin. <b>Place a second crab</b> while you wait!', shop: true, target: () => document.querySelector('.card:not(.poor)'), done: () => S.towers.length > 1 || (!S.inRound && S.round > 0) },
   { text: 'Wave cleared! <b>Tap one of your crabs</b> on the map to see its upgrades.', target: 'crab', wait: () => !S.inRound, done: () => S.selected },
   { text: 'Tap <b>UPGRADE</b> to make it stronger. Every crab has 5 upgrades, and at level 3 you pick one of two paths!', target: () => document.querySelector('[data-act="up"]'), done: () => S.towers.some(t => t.lvl > 0) || !S.selected },
   { text: 'You\'re ready! New toucans join every round, so keep building and upgrading. <b>Good luck!</b>', target: null, ok: true },
@@ -2994,6 +3070,7 @@ function tutorialTick() {
   c.style.display = visible ? 'block' : 'none';
   document.querySelectorAll('.coach-hl').forEach(el => el.classList.remove('coach-hl'));
   if (!visible) return;
+  if (st.shop && !S.placing && !drawerOpen) setDrawer(true);   // the step points at a shop card, so it has to be showing
   if (st.done && st.done()) { tut.step++; if (tut.step >= TUTORIAL.length) return endTutorial(); Sfx.play('click'); showTutStep(); return; }
   // point at the target
   let r = null;
@@ -3108,10 +3185,11 @@ function fitSide() {
   const side = $('side'), boxes = [...side.querySelectorAll('.box')];
   if (document.body.classList.contains('in-menu') || !side.offsetParent) return;
   boxes.forEach(b => b.style.zoom = '');
-  const avail = side.clientHeight - 8, gap = 8;
+  const body = document.body, sheet = body.classList.contains('drawer') && !isSideDrawer();
+  const avail = (sheet ? parseFloat(side.style.maxHeight) : side.clientHeight) - 8, gap = 8;
   const natural = b => b.scrollHeight + (b.offsetHeight - b.clientHeight);   // content + padding + borders
-  const info = $('info'), stacked = document.body.classList.contains('stacked');
-  info.classList.toggle('twocol', stacked && info.clientWidth > 380);   // short, wide info box: flow into two columns
+  const info = $('info'), stacked = body.classList.contains('stacked') || body.classList.contains('sheet-row');
+  info.classList.toggle('twocol', (stacked || sheet) && info.clientWidth > 380);   // short, wide info box: flow into two columns
   if (stacked) {
     for (const b of boxes) {
       let z = Math.min(textScale(), avail / natural(b)); if (z !== 1) b.style.zoom = Math.max(0.5, z);
@@ -3124,6 +3202,7 @@ function fitSide() {
     const used = () => boxes.reduce((a, b) => a + b.getBoundingClientRect().height, 0) + gap * (boxes.length - 1);
     for (let i = 0; i < 4 && z > 0.5 && used() > avail + 1; i++) { z = Math.max(0.5, z * avail / used()); boxes.forEach(b => b.style.zoom = z); }
   }
+  body.style.setProperty('--drawer-w', -side.offsetWidth + 'px'); body.style.setProperty('--drawer-h', -side.offsetHeight + 'px');
 }
 function fitModal() {
   const o = $('overlay'), m = o.querySelector('.modal');
@@ -3134,31 +3213,55 @@ function fitModal() {
   else if (z !== 1) m.style.zoom = z;
 }
 let VIEW_SCALE = 1;   // on-screen pixels per canvas pixel (keeps map text readable)
-function fitLayout(extraSide = 0) {
+// The game view's size depends only on the screen, never on what the panels are showing.
+function fitLayout() {
   const b = document.body, main = $('main'), stage = $('stage'), side = $('side');
-  const menu = b.classList.contains('in-menu');
-  const r = main.getBoundingClientRect(), pad = 6 + 5, gap = 10;   // stage border + shadow
-  side.style.width = '';
+  const menu = b.classList.contains('in-menu'), drawer = DRAWER.matches;
+  const pad = 6 + 5, gap = 10;   // stage border + shadow
+  b.classList.toggle('drawer', drawer);
+  if (drawer && !menu) {   // rail HUD when that leaves a clearly bigger map
+    const w = $('wrap').getBoundingClientRect(), railW = 140 + 8, hudH = 46 + 8;
+    const scRail = Math.min((w.width - railW - pad) / W, (w.height - pad) / H), scTop = Math.min((w.width - pad) / W, (w.height - hudH - pad) / H);
+    b.classList.toggle('rail', scRail > scTop * 1.03);
+  } else if (!drawer) b.classList.remove('rail');
+  const r = main.getBoundingClientRect();
+  side.style.width = ''; side.style.top = ''; side.style.maxHeight = '';
   if (menu) {   // menu scene fills the whole screen (canvas crops to cover)
     stage.style.width = Math.floor(r.width - 5) + 'px'; stage.style.height = Math.floor(r.height - 5) + 'px';
     VIEW_SCALE = (r.width - 11) / W; fitModal(); return;
   }
-  // A: game view beside a shop/info column.  B: game view full width, shop + info side by side underneath.
-  const sideW = Math.max(180, Math.min(300, r.width - (W * (r.height - pad) / H + pad) - gap)) + extraSide;
-  const scA = Math.min((r.width - sideW - gap - pad) / W, (r.height - pad) / H);
-  const panelH = Math.max(190, Math.min(300, r.height * 0.3));
-  const scB = Math.min((r.width - pad) / W, (r.height - panelH - gap - pad) / H);
-  const stacked = extraSide ? b.classList.contains('stacked') : scB > scA * 1.03;
-  b.classList.toggle('stacked', stacked);
-  if (!stacked) side.style.width = sideW + 'px';
-  const sc = Math.max(0.15, stacked ? scB : scA);
+  let sc;
+  if (drawer) {
+    b.classList.remove('stacked');
+    sc = Math.max(0.15, Math.min((r.width - pad) / W, (r.height - pad) / H));
+    const spareW = r.width - (W * sc + pad), spareH = r.height - (H * sc + pad), onSide = spareW > spareH;
+    const docked = !onSide && spareH >= 300;   // tall screens: the panel fits under the map, so it just stays there
+    b.classList.toggle('drawer-side', onSide);
+    b.classList.toggle('sheet-row', !onSide && !docked);
+    b.classList.toggle('docked', docked);
+    drawerSpare = onSide ? spareW : spareH;
+    if (onSide) side.style.width = Math.max(drawerSpare, 230) + 'px';
+    else side.style.maxHeight = (docked ? spareH - gap : Math.max(spareH, r.height * 0.5)) + 'px';
+    if (docked) { side.style.top = Math.ceil(H * sc + pad + gap - 5) + 'px'; b.classList.remove('flip'); setDrawer(true); }
+    else if (!b.classList.contains('drawer-open') && drawerOpen) setDrawer(true);
+  } else {
+    b.classList.remove('drawer-side', 'sheet-row', 'docked', 'drawer-open', 'flip');
+    // A: game view beside a shop/info column.  B: game view full width, shop + info side by side underneath.
+    const minSide = r.height < 900 ? Math.min(300, r.width * 0.24) : 180;   // short windows: a wider column keeps the panel readable
+    const sideW = Math.max(minSide, Math.min(300, r.width - (W * (r.height - pad) / H + pad) - gap));
+    const scA = Math.min((r.width - sideW - gap - pad) / W, (r.height - pad) / H);
+    const panelH = Math.max(190, Math.min(300, r.height * 0.3));
+    const scB = Math.min((r.width - pad) / W, (r.height - panelH - gap - pad) / H);
+    const stacked = scB > scA * 1.03;
+    b.classList.toggle('stacked', stacked);
+    if (!stacked) side.style.width = sideW + 'px';
+    sc = Math.max(0.15, stacked ? scB : scA);
+  }
   stage.style.width = Math.floor(W * sc + 6) + 'px';
   stage.style.height = Math.floor(H * sc + 6) + 'px';
   VIEW_SCALE = sc;
   fitSide(); fitModal();
-  // small side-by-side screens: trade a little game-view width for a readable side panel
-  const z = +(side.querySelector('.box')?.style.zoom || 1);
-  if (!stacked && z < 0.92 && sideW < r.width * 0.26) return fitLayout(extraSide + 20);
+  if (drawer) syncDrawer();
 }
 let fitQueued = false;
 const queueFit = () => { if (!fitQueued) { fitQueued = true; requestAnimationFrame(() => { fitQueued = false; fitLayout(); }); } };
