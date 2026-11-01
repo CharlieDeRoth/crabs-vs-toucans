@@ -1,0 +1,13 @@
+{
+  "name": "crabs-vs-toucans",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A cosy pixel tower defence. Made with Claude By Anthropic. Vibecoded by LobsterGames.",
+  "scripts": {
+    "build": "node tools/build-www.js",
+    "sync": "npm run build && npx cap sync",
+    "assets": "npx capacitor-assets generate --iconBackgroundColor \"#9fd6f2\" --splashBackgroundColor \"#f3eefc\" --splashBackgroundColorDark \"#2b2340\"",
+    "open:ios": "npx cap open ios",
+    "open:android": "npx cap open android"
+  }
+}

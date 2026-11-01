@@ -1,0 +1,16 @@
+# layout-audit output (regenerate with: node tools/layout-audit.js)
+audit/
+# Capacitor build output and dependencies
+www/
+node_modules/
+# native project build folders (the ios/ and android/ projects themselves are committed once created)
+ios/App/Pods/
+ios/App/build/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.keystore
+*.jks
+.DS_Store
+Thumbs.db

@@ -1,0 +1,15 @@
+{
+  "name": "Crabs vs Toucans",
+  "short_name": "Crabs vs Toucans",
+  "description": "A cosy pixel tower defence: place crabs to stop the toucans reaching the border.",
+  "start_url": "index.html",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#f3eefc",
+  "theme_color": "#f3eefc",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-1024.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" }
+  ]
+}

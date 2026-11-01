@@ -1,0 +1,13 @@
+{
+  "appId": "com.lobstergames.crabsvstoucans",
+  "appName": "Crabs vs Toucans",
+  "webDir": "www",
+  "backgroundColor": "#f3eefc",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#f3eefc"
+  },
+  "android": {
+    "backgroundColor": "#f3eefc"
+  }
+}
